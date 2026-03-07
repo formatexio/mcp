@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mkdir -p dist
+
+          GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-linux-amd64        .
+          GOOS=linux   GOARCH=arm64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-linux-arm64        .
+          GOOS=darwin  GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-darwin-amd64       .
+          GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-darwin-arm64       .
+          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-windows-amd64.exe  .
+
+          ls -lh dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "formatex-mcp ${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## Installation
+
+            ### go install (requires Go)
+            ```bash
+            go install github.com/formatexio/mcp@${{ steps.version.outputs.VERSION }}
+            ```
+
+            ### Download binary
+            Pick the binary for your platform below. Make it executable and add it to your PATH.
+
+            | Platform | File |
+            |---|---|
+            | Linux x86_64 | `formatex-mcp-linux-amd64` |
+            | Linux ARM64 | `formatex-mcp-linux-arm64` |
+            | macOS Intel | `formatex-mcp-darwin-amd64` |
+            | macOS Apple Silicon | `formatex-mcp-darwin-arm64` |
+            | Windows x64 | `formatex-mcp-windows-amd64.exe` |
+
+            ### Quick setup (Claude Desktop)
+            ```json
+            {
+              "mcpServers": {
+                "formatex": {
+                  "command": "/usr/local/bin/formatex-mcp",
+                  "env": { "FORMATEX_API_KEY": "fex_your_key_here" }
+                }
+              }
+            }
+            ```
+
+            See [full setup docs](https://formatex.io/docs#mcp) for all clients.
+          files: dist/*
+          draft: false
+          prerelease: false

@@ -1,0 +1,27 @@
+name: formatex-mcp
+description: Compile LaTeX documents to PDF using the FormaTeX API. Enables AI agents to generate and compile LaTeX without any local TeX Live installation.
+homepage: https://formatex.io
+version: "1.0.0"
+
+startCommand:
+  type: stdio
+  configSchema:
+    properties:
+      FORMATEX_API_KEY:
+        description: Your FormaTeX API key. Get one at https://formatex.io/dashboard/api-keys
+        required: true
+        type: string
+      FORMATEX_API_URL:
+        description: FormaTeX API base URL. Defaults to https://api.formatex.io/
+        required: false
+        type: string
+        default: "https://api.formatex.io/"
+  commandFunction: |-
+    (config) => ({
+      command: "formatex-mcp",
+      args: [],
+      env: {
+        FORMATEX_API_KEY: config.FORMATEX_API_KEY,
+        ...(config.FORMATEX_API_URL ? { FORMATEX_API_URL: config.FORMATEX_API_URL } : {})
+      }
+    })
