@@ -1,3 +1,8 @@
 dist/
-formatex-mcp
-formatex-mcp.exe
+
+# Binaries from `go build .` and `go build ./cmd/formatex-mcp` in the repository
+# root. Anchored so that the cmd/formatex-mcp directory is not ignored.
+/mcp
+/mcp.exe
+/formatex-mcp
+/formatex-mcp.exe
