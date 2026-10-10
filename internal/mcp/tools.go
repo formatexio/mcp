@@ -11,21 +11,26 @@ import (
 
 // Input types for each tool. Struct tags generate the JSON schema automatically.
 
+// A field without omitempty is marked required in the generated JSON schema,
+// so every optional parameter carries omitempty: a client that leaves it out
+// must not fail validation. A zero value is omitted from the upstream request,
+// which makes the API apply its own default.
+
 type CompileLatexInput struct {
-	Latex   string `json:"latex"`
-	Engine  string `json:"engine"`
-	Runs    int    `json:"runs"`
-	Timeout int    `json:"timeout"`
+	Latex   string `json:"latex" jsonschema:"Complete LaTeX source code, from \\documentclass to \\end{document}"`
+	Engine  string `json:"engine" jsonschema:"Engine to compile with: pdflatex, xelatex, lualatex or latexmk"`
+	Runs    int    `json:"runs,omitempty" jsonschema:"Number of compilation passes, needed for references and tables of contents. Optional; limited by the plan"`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"Compile timeout in seconds. Optional; limited by the plan"`
 }
 
 type CompileSmartInput struct {
-	Latex   string `json:"latex"`
-	Runs    int    `json:"runs"`
-	Timeout int    `json:"timeout"`
+	Latex   string `json:"latex" jsonschema:"Complete LaTeX source code, from \\documentclass to \\end{document}"`
+	Runs    int    `json:"runs,omitempty" jsonschema:"Number of compilation passes, needed for references and tables of contents. Optional; limited by the plan"`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"Compile timeout in seconds. Optional; limited by the plan"`
 }
 
 type CheckSyntaxInput struct {
-	Latex string `json:"latex"`
+	Latex string `json:"latex" jsonschema:"LaTeX source code to validate"`
 }
 
 type ListEnginesInput struct{}
@@ -33,68 +38,133 @@ type ListEnginesInput struct{}
 type GetUsageInput struct{}
 
 type CompileAsyncInput struct {
-	Latex   string `json:"latex"`
-	Engine  string `json:"engine,omitempty"`
-	Runs    int    `json:"runs,omitempty"`
-	Timeout int    `json:"timeout,omitempty"`
+	Latex   string `json:"latex" jsonschema:"Complete LaTeX source code, from \\documentclass to \\end{document}"`
+	Engine  string `json:"engine,omitempty" jsonschema:"Engine to compile with: pdflatex, xelatex, lualatex or latexmk. Optional"`
+	Runs    int    `json:"runs,omitempty" jsonschema:"Number of compilation passes. Optional; limited by the plan"`
+	Timeout int    `json:"timeout,omitempty" jsonschema:"Compile timeout in seconds. Optional; limited by the plan"`
 }
 
 type GetJobInput struct {
-	JobID string `json:"jobId"`
+	JobID string `json:"jobId" jsonschema:"Job ID returned by compile_async"`
 }
 
 type ListTemplatesInput struct{}
 
 type CompileTemplateInput struct {
-	TemplateID string            `json:"templateId"`
-	Variables  map[string]string `json:"variables"`
+	TemplateID string            `json:"templateId" jsonschema:"Template ID from list_templates"`
+	Variables  map[string]string `json:"variables,omitempty" jsonschema:"Values for the template variables, keyed by variable name. Optional"`
+}
+
+type FetchPDFBytesInput struct {
+	JobID string `json:"jobId" jsonschema:"Job ID of a finished compilation"`
+}
+
+// boolPtr returns a pointer to b. ToolAnnotations uses *bool for the hints
+// whose protocol default is true, so an explicit false must be a non-nil pointer.
+func boolPtr(b bool) *bool { return &b }
+
+// readOnlyTool builds the definition of a tool that only reads from the
+// caller's own FormaTeX account (or validates input) and changes nothing, so
+// clients may auto-approve it. Its interaction domain is the FormaTeX service
+// itself, which makes it a closed world.
+//
+// The title is set both on the tool and in the annotations: the former is the
+// current location, the latter is what clients written against the 2025-03
+// revision of the specification read.
+func readOnlyTool(name, title, description string) *sdk.Tool {
+	return &sdk.Tool{
+		Name:        name,
+		Title:       title,
+		Description: description,
+		Annotations: &sdk.ToolAnnotations{
+			Title:         title,
+			ReadOnlyHint:  true,
+			OpenWorldHint: boolPtr(false),
+		},
+	}
+}
+
+// compileTool builds the definition of a tool that starts a compilation. Each
+// call creates a new job that counts against the monthly quota, so it is
+// neither read-only nor idempotent. It only adds data and never overwrites or
+// deletes anything, hence DestructiveHint false. It sends arbitrary content to a
+// remote compiler and returns a link to externally hosted output, hence
+// OpenWorldHint true.
+func compileTool(name, title, description string) *sdk.Tool {
+	return &sdk.Tool{
+		Name:        name,
+		Title:       title,
+		Description: description,
+		Annotations: &sdk.ToolAnnotations{
+			Title:           title,
+			ReadOnlyHint:    false,
+			DestructiveHint: boolPtr(false),
+			IdempotentHint:  false,
+			OpenWorldHint:   boolPtr(true),
+		},
+	}
 }
 
 func registerTools(server *sdk.Server, client *Client) {
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "compile_latex",
-		Description: "Compile LaTeX source code to a PDF using the FormaTeX API. Returns the PDF as a base64-encoded string. Specify the engine explicitly (pdflatex for standard documents, xelatex/lualatex for Unicode/modern fonts, latexmk for complex documents).",
-	}, handleCompileLatex(client))
+	sdk.AddTool(server, compileTool(
+		"compile_latex",
+		"Compile LaTeX to PDF",
+		"Compile LaTeX source code to a PDF using the FormaTeX API. Returns a download URL for the PDF. Specify the engine explicitly (pdflatex for standard documents, xelatex/lualatex for Unicode/modern fonts, latexmk for complex documents).",
+	), handleCompileLatex(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "compile_smart",
-		Description: "Compile LaTeX with automatic engine detection and error fixing. Recommended for most use cases — the smart compiler detects Unicode requirements, applies common fixes, and retries with fallback engines. Returns the PDF as a base64-encoded string.",
-	}, handleCompileSmart(client))
+	sdk.AddTool(server, compileTool(
+		"compile_smart",
+		"Smart Compile LaTeX",
+		"Compile LaTeX with automatic engine detection and error fixing. Recommended for most use cases — the smart compiler detects Unicode requirements, applies common fixes, and retries with fallback engines. Returns a download URL for the PDF.",
+	), handleCompileSmart(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "check_syntax",
-		Description: "Validate LaTeX source code for syntax errors, forbidden commands, and structural issues WITHOUT compiling. Does not count against your monthly compilation quota. Returns validation results and engine recommendations.",
-	}, handleCheckSyntax(client))
+	sdk.AddTool(server, readOnlyTool(
+		"check_syntax",
+		"Check LaTeX Syntax",
+		"Validate LaTeX source code for syntax errors, forbidden commands, and structural issues WITHOUT compiling. Does not count against your monthly compilation quota. Returns validation results and engine recommendations.",
+	), handleCheckSyntax(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "list_engines",
-		Description: "List the available LaTeX compilation engines (pdflatex, xelatex, lualatex, latexmk) and when to use each one.",
-	}, handleListEngines(client))
+	sdk.AddTool(server, readOnlyTool(
+		"list_engines",
+		"List LaTeX Engines",
+		"List the available LaTeX compilation engines (pdflatex, xelatex, lualatex, latexmk) and when to use each one.",
+	), handleListEngines(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "get_usage",
-		Description: "Get the current month's compilation statistics and plan limits for the configured API key. Shows compilations used, monthly limit, and breakdown by engine and status.",
-	}, handleGetUsage(client))
+	sdk.AddTool(server, readOnlyTool(
+		"get_usage",
+		"Get Usage and Limits",
+		"Get the current month's compilation statistics and plan limits for the configured API key. Shows compilations used, monthly limit, and breakdown by engine and status.",
+	), handleGetUsage(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "compile_async",
-		Description: "Submit a LaTeX compilation job asynchronously and return a job ID immediately. Use get_job to poll the result. Recommended for large documents or batch workflows where you don't need to wait for completion.",
-	}, handleCompileAsync(client))
+	sdk.AddTool(server, compileTool(
+		"compile_async",
+		"Compile LaTeX Asynchronously",
+		"Submit a LaTeX compilation job asynchronously and return a job ID immediately. Use get_job to poll the result. Recommended for large documents or batch workflows where you don't need to wait for completion.",
+	), handleCompileAsync(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "get_job",
-		Description: "Get the status of an async compilation job by ID. If the job is completed, automatically fetches and returns the PDF as base64. If failed, fetches and returns the error log. Use after compile_async.",
-	}, handleGetJob(client))
+	sdk.AddTool(server, readOnlyTool(
+		"get_job",
+		"Get Compilation Job",
+		"Get the status of an async compilation job by ID. If completed, returns a download URL for the PDF (authenticated with your API key — use fetch_pdf_bytes if you need the raw bytes). If failed, returns the error log. Use after compile_async.",
+	), handleGetJob(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "list_templates",
-		Description: "List your saved LaTeX templates. Returns template IDs, names, and descriptions. Templates are available on Pro plan and higher. Use the template ID with compile_template.",
-	}, handleListTemplates(client))
+	sdk.AddTool(server, readOnlyTool(
+		"list_templates",
+		"List Templates",
+		"List your saved LaTeX templates. Returns template IDs, names, and descriptions. Templates are available on Pro plan and higher. Use the template ID with compile_template.",
+	), handleListTemplates(client))
 
-	sdk.AddTool(server, &sdk.Tool{
-		Name:        "compile_template",
-		Description: "Compile a saved LaTeX template by ID with optional variable substitutions. Returns the PDF as a base64-encoded string. Templates are available on Pro plan and higher.",
-	}, handleCompileTemplate(client))
+	sdk.AddTool(server, compileTool(
+		"compile_template",
+		"Compile Template",
+		"Compile a saved LaTeX template by ID with optional variable substitutions. Returns a download URL for the PDF. Templates are available on Pro plan and higher.",
+	), handleCompileTemplate(client))
+
+	sdk.AddTool(server, readOnlyTool(
+		"fetch_pdf_bytes",
+		"Fetch PDF Bytes",
+		"Explicitly fetch a compiled PDF as raw bytes (base64). Only call this when you need to materialize the file — for example, to save it to disk, inspect its contents, or present it as a downloadable artifact. For most use cases the signed URL returned by compile_latex/compile_smart is sufficient and far cheaper in tokens.",
+	), handleFetchPDFBytes(client))
 }
 
 func handleCompileLatex(client *Client) func(context.Context, *sdk.CallToolRequest, CompileLatexInput) (*sdk.CallToolResult, struct{}, error) {
@@ -114,7 +184,6 @@ func handleCompileLatex(client *Client) func(context.Context, *sdk.CallToolReque
 			}, struct{}{}, nil
 		}
 
-		pdfB64 := base64.StdEncoding.EncodeToString(result.PDFData)
 		engine := result.EngineUsed
 		if engine == "" {
 			engine = input.Engine
@@ -123,13 +192,16 @@ func handleCompileLatex(client *Client) func(context.Context, *sdk.CallToolReque
 			}
 		}
 
-		meta := fmt.Sprintf("Compilation successful. Engine: %s, Duration: %s ms, Job ID: %s, PDF size: %d bytes",
-			engine, result.DurationMs, result.JobID, len(result.PDFData))
+		pdfURL := result.SignedPDFURL
+		if pdfURL == "" {
+			pdfURL = client.BaseURL() + "/api/v1/compilations/" + result.JobID + "/pdf"
+		}
+		meta := fmt.Sprintf("Compilation successful. Engine: %s, Duration: %s ms, Job ID: %s, PDF size: %d bytes\nDownload PDF: %s",
+			engine, result.DurationMs, result.JobID, len(result.PDFData), pdfURL)
 
 		return &sdk.CallToolResult{
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: meta},
-				&sdk.TextContent{Text: "PDF_BASE64:" + pdfB64},
 			},
 		}, struct{}{}, nil
 	}
@@ -153,8 +225,6 @@ func handleCompileSmart(client *Client) func(context.Context, *sdk.CallToolReque
 			}, struct{}{}, nil
 		}
 
-		pdfB64 := base64.StdEncoding.EncodeToString(result.PDFData)
-
 		parts := []string{
 			fmt.Sprintf("Smart compilation successful. Duration: %s ms, Job ID: %s, PDF size: %d bytes", result.DurationMs, result.JobID, len(result.PDFData)),
 		}
@@ -164,11 +234,15 @@ func handleCompileSmart(client *Client) func(context.Context, *sdk.CallToolReque
 		if result.AutoFixesCount != "" && result.AutoFixesCount != "0" {
 			parts = append(parts, fmt.Sprintf("Auto-fixes applied: %s", result.AutoFixesCount))
 		}
+		pdfURL := result.SignedPDFURL
+		if pdfURL == "" {
+			pdfURL = client.BaseURL() + "/api/v1/compilations/" + result.JobID + "/pdf"
+		}
+		parts = append(parts, fmt.Sprintf("Download PDF: %s", pdfURL))
 
 		return &sdk.CallToolResult{
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: strings.Join(parts, " | ")},
-				&sdk.TextContent{Text: "PDF_BASE64:" + pdfB64},
 			},
 		}, struct{}{}, nil
 	}
@@ -299,28 +373,21 @@ func handleGetJob(client *Client) func(context.Context, *sdk.CallToolRequest, Ge
 
 		switch job.Status {
 		case "completed":
-			pdfBytes, err := client.GetJobPDF(ctx, input.JobID)
-			if err != nil {
-				return &sdk.CallToolResult{
-					Content: []sdk.Content{
-						&sdk.TextContent{Text: fmt.Sprintf("Job completed but failed to fetch PDF: %s", err.Error())},
-					},
-					IsError: true,
-				}, struct{}{}, nil
+			pdfURL := job.SignedPDFURL
+			if pdfURL == "" {
+				pdfURL = client.BaseURL() + "/api/v1/jobs/" + input.JobID + "/pdf"
 			}
-			pdfB64 := base64.StdEncoding.EncodeToString(pdfBytes)
-			meta := fmt.Sprintf("Job %s completed. PDF size: %d bytes.", input.JobID, len(pdfBytes))
+			meta := fmt.Sprintf("Job %s completed.\nDownload PDF: %s", input.JobID, pdfURL)
 			return &sdk.CallToolResult{
 				Content: []sdk.Content{
 					&sdk.TextContent{Text: meta},
-					&sdk.TextContent{Text: "PDF_BASE64:" + pdfB64},
 				},
 			}, struct{}{}, nil
 
 		case "failed":
 			log, err := client.GetJobLog(ctx, input.JobID)
 			if err != nil {
-				log = fmt.Sprintf("(could not fetch error log: %s)", err.Error())
+				log = fmt.Sprintf("(error log unavailable — it may have expired. Call compile_latex again to retry the compilation.)")
 			}
 			return &sdk.CallToolResult{
 				Content: []sdk.Content{
@@ -420,13 +487,34 @@ func handleCompileTemplate(client *Client) func(context.Context, *sdk.CallToolRe
 			}, struct{}{}, nil
 		}
 
-		pdfB64 := base64.StdEncoding.EncodeToString(result.PDFData)
-		meta := fmt.Sprintf("Template compiled successfully. Duration: %s ms, Job ID: %s, PDF size: %d bytes",
-			result.DurationMs, result.JobID, len(result.PDFData))
+		pdfURL := client.BaseURL() + "/api/v1/compilations/" + result.JobID + "/pdf"
+		meta := fmt.Sprintf("Template compiled successfully. Duration: %s ms, Job ID: %s, PDF size: %d bytes\nDownload PDF: %s",
+			result.DurationMs, result.JobID, len(result.PDFData), pdfURL)
 
 		return &sdk.CallToolResult{
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: meta},
+			},
+		}, struct{}{}, nil
+	}
+}
+
+func handleFetchPDFBytes(client *Client) func(context.Context, *sdk.CallToolRequest, FetchPDFBytesInput) (*sdk.CallToolResult, struct{}, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input FetchPDFBytesInput) (*sdk.CallToolResult, struct{}, error) {
+		pdfBytes, err := client.GetJobPDF(ctx, input.JobID)
+		if err != nil {
+			return &sdk.CallToolResult{
+				Content: []sdk.Content{
+					&sdk.TextContent{Text: fmt.Sprintf("Failed to fetch PDF: %s", err.Error())},
+				},
+				IsError: true,
+			}, struct{}{}, nil
+		}
+
+		pdfB64 := base64.StdEncoding.EncodeToString(pdfBytes)
+		return &sdk.CallToolResult{
+			Content: []sdk.Content{
+				&sdk.TextContent{Text: fmt.Sprintf("PDF fetched. Size: %d bytes. Job ID: %s", len(pdfBytes), input.JobID)},
 				&sdk.TextContent{Text: "PDF_BASE64:" + pdfB64},
 			},
 		}, struct{}{}, nil

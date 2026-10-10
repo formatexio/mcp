@@ -29,6 +29,9 @@ func NewClient(baseURL, apiKey string) *Client {
 	}
 }
 
+// BaseURL returns the API base URL configured for this client.
+func (c *Client) BaseURL() string { return c.baseURL }
+
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("X-API-Key", c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -65,12 +68,12 @@ type CompileAPIRequest struct {
 
 // SmartCompileAPIRequest is the request body for POST /compile/smart.
 type SmartCompileAPIRequest struct {
-	LaTeX   string `json:"latex"`
-	Engine  string `json:"engine,omitempty"`
-	Runs    int    `json:"runs,omitempty"`
-	Timeout int    `json:"timeout,omitempty"`
-	AutoFix  bool `json:"autoFix,omitempty"`
-	Fallback bool `json:"fallback,omitempty"`
+	LaTeX    string `json:"latex"`
+	Engine   string `json:"engine,omitempty"`
+	Runs     int    `json:"runs,omitempty"`
+	Timeout  int    `json:"timeout,omitempty"`
+	AutoFix  bool   `json:"autoFix,omitempty"`
+	Fallback bool   `json:"fallback,omitempty"`
 }
 
 // CompileResponse holds the raw PDF bytes and response headers.
@@ -80,6 +83,7 @@ type CompileResponse struct {
 	DurationMs     string
 	EngineUsed     string
 	AutoFixesCount string
+	SignedPDFURL   string // short-lived browser-clickable URL, set when server supports it
 }
 
 // SyntaxCheckResult is the response from POST /compile/check.
@@ -145,9 +149,10 @@ func (c *Client) Compile(ctx context.Context, req CompileAPIRequest) (*CompileRe
 	}
 
 	return &CompileResponse{
-		PDFData:    respBody,
-		JobID:      resp.Header.Get("X-Job-ID"),
-		DurationMs: resp.Header.Get("X-Compile-Duration-Ms"),
+		PDFData:      respBody,
+		JobID:        resp.Header.Get("X-Job-ID"),
+		DurationMs:   resp.Header.Get("X-Compile-Duration-Ms"),
+		SignedPDFURL: resp.Header.Get("X-Signed-PDF-URL"),
 	}, nil
 }
 
@@ -185,6 +190,7 @@ func (c *Client) SmartCompile(ctx context.Context, req SmartCompileAPIRequest) (
 		DurationMs:     resp.Header.Get("X-Compile-Duration-Ms"),
 		EngineUsed:     resp.Header.Get("X-Engine-Used"),
 		AutoFixesCount: resp.Header.Get("X-Auto-Fixes-Applied"),
+		SignedPDFURL:   resp.Header.Get("X-Signed-PDF-URL"),
 	}, nil
 }
 
@@ -266,7 +272,8 @@ type JobStatusResponse struct {
 		DurationMs int    `json:"durationMs"`
 		Engine     string `json:"engine"`
 	} `json:"result,omitempty"`
-	Error string `json:"error,omitempty"`
+	Error        string `json:"error,omitempty"`
+	SignedPDFURL string `json:"signed_pdf_url,omitempty"` // present when completed and server supports signed URLs
 }
 
 // TemplateVariable describes a single variable in a template schema.
