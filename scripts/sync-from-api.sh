@@ -12,8 +12,10 @@
 #                               "func main()" becomes "func Main()"
 #   <api>/internal/mcp/*.go  -> internal/mcp/*.go
 #                               the API module's import path becomes this module's
-#   <api>/smithery.yaml      -> smithery.yaml (unchanged; a test in internal/mcp
-#                               keeps it in step with the code)
+#
+# smithery.yaml is NOT synced. Smithery reads it from this repository in its own
+# startCommand layout, which the API repository's file does not use. A test in
+# internal/mcp keeps its version in step with the code.
 #
 # internal/app and internal/mcp are replaced as a whole, so a file removed in the
 # API repository disappears here too, and running the script twice gives the same
@@ -38,7 +40,6 @@ module=github.com/formatexio/mcp
 
 [ -f "$api/cmd/mcp/main.go" ] || die "$api is not the FormaTeX API repository: cmd/mcp/main.go not found"
 [ -f "$api/internal/mcp/server.go" ] || die "$api is not the FormaTeX API repository: internal/mcp/server.go not found"
-[ -f "$api/smithery.yaml" ] || die "$api/smithery.yaml not found"
 [ -f "$api/go.mod" ] || die "$api/go.mod not found"
 [ "$api" != "$repo" ] || die "the source and the destination are the same directory"
 command -v gofmt >/dev/null || die "gofmt not found in PATH"
@@ -88,7 +89,6 @@ mkdir -p "$repo/internal/app" "$repo/internal/mcp"
 rm -f "$repo"/internal/app/*.go "$repo"/internal/mcp/*.go
 cp "$stage"/app/*.go "$repo/internal/app/"
 cp "$stage"/mcp/*.go "$repo/internal/mcp/"
-cp "$api/smithery.yaml" "$repo/smithery.yaml"
 
 echo "synced from $api"
 if rev=$(git -C "$api" rev-parse --short HEAD 2>/dev/null); then
@@ -97,4 +97,3 @@ if rev=$(git -C "$api" rev-parse --short HEAD 2>/dev/null); then
 fi
 echo "  internal/app: $(ls "$repo"/internal/app/*.go | wc -l | tr -d ' ') files"
 echo "  internal/mcp: $(ls "$repo"/internal/mcp/*.go | wc -l | tr -d ' ') files"
-echo "  smithery.yaml"

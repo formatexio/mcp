@@ -1,54 +1,27 @@
-name: formatex
-description: Compile LaTeX documents to PDF using the FormaTeX API. Enables AI agents to generate and compile LaTeX without any local TeX installation.
+name: formatex-mcp
+description: Compile LaTeX documents to PDF using the FormaTeX API. Enables AI agents to generate and compile LaTeX without any local TeX Live installation.
 homepage: https://formatex.io
 version: "1.1.0"
-license: MIT
 
-# Remote usage (streamable HTTP, nothing to install): point a client at
-# https://mcp.formatex.io/mcp. Clients that support OAuth sign in through the
-# FormaTeX consent page; others send the key as "Authorization: Bearer <key>"
-# or "X-API-Key: <key>". The block below describes the local stdio binary.
-mcp:
-  server:
-    command: formatex-mcp
-    args: []
-    env:
+startCommand:
+  type: stdio
+  configSchema:
+    properties:
       FORMATEX_API_KEY:
         description: Your FormaTeX API key. Get one at https://formatex.io/dashboard/api-keys
         required: true
+        type: string
       FORMATEX_API_URL:
-        description: FormaTeX API base URL (leave empty to use the default production server)
+        description: FormaTeX API base URL. Defaults to https://api.formatex.io/
         required: false
+        type: string
         default: "https://api.formatex.io/"
-
-tools:
-  - name: compile_latex
-    description: Compile LaTeX source code to PDF using a specified engine (pdflatex, xelatex, lualatex, latexmk). Returns a download URL for the PDF.
-  - name: compile_smart
-    description: Compile LaTeX with automatic engine detection, error fixing, and fallback. Returns a download URL for the PDF. Recommended for most use cases.
-  - name: check_syntax
-    description: Validate LaTeX source code without compiling. No quota usage.
-  - name: list_engines
-    description: List available LaTeX compilation engines and when to use each.
-  - name: get_usage
-    description: Get current month compilation statistics and plan limits.
-  - name: compile_async
-    description: Submit a LaTeX compilation job asynchronously. Returns a job ID to poll with get_job.
-  - name: get_job
-    description: Poll an async job by ID. Returns a download URL for the PDF when done, error log when failed.
-  - name: list_templates
-    description: List saved user templates (Pro plan and higher). Returns IDs and names.
-  - name: compile_template
-    description: Compile a saved template by ID with variable substitutions. Returns a download URL for the PDF.
-  - name: fetch_pdf_bytes
-    description: Fetch a compiled PDF as base64 bytes by job ID. Only needed to save or inspect the file; the compile tools return a download URL.
-
-resources:
-  - uri: formatex://engines
-    description: Available LaTeX engines with descriptions.
-  - uri: formatex://usage
-    description: Current usage stats and plan limits.
-
-prompts:
-  - name: fix_latex
-    description: Guided LaTeX error diagnosis workflow.
+  commandFunction: |-
+    (config) => ({
+      command: "formatex-mcp",
+      args: [],
+      env: {
+        FORMATEX_API_KEY: config.FORMATEX_API_KEY,
+        ...(config.FORMATEX_API_URL ? { FORMATEX_API_URL: config.FORMATEX_API_URL } : {})
+      }
+    })
