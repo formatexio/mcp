@@ -1,5 +1,13 @@
 name: Release
 
+# Pushing a tag vX.Y.Z tests the code, builds the five binaries and attaches
+# them, with checksums.txt, to a GitHub release.
+#
+# The tag must equal the server version (Version in internal/mcp/server.go).
+# That version is a constant shared by the MCP handshake, /health and --version,
+# so it cannot be injected at build time and the binaries are not built with
+# -X. The "Check the tag" step stops a mislabeled release.
+
 on:
   push:
     tags:
@@ -10,46 +18,68 @@ permissions:
 
 jobs:
   release:
-    name: Build & Release
+    name: Test, build and release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.23"
+          go-version-file: go.mod
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test ./... -race -count=1
 
       - name: Build binaries
+        env:
+          CGO_ENABLED: "0"
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
           mkdir -p dist
+          build() {
+            GOOS="$1" GOARCH="$2" go build -trimpath -ldflags "-s -w" -o "dist/$3" ./cmd/formatex-mcp
+          }
+          build linux   amd64 formatex-mcp-linux-amd64
+          build linux   arm64 formatex-mcp-linux-arm64
+          build darwin  amd64 formatex-mcp-darwin-amd64
+          build darwin  arm64 formatex-mcp-darwin-arm64
+          build windows amd64 formatex-mcp-windows-amd64.exe
 
-          GOOS=linux   GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-linux-amd64        .
-          GOOS=linux   GOARCH=arm64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-linux-arm64        .
-          GOOS=darwin  GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-darwin-amd64       .
-          GOOS=darwin  GOARCH=arm64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-darwin-arm64       .
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/formatex-mcp-windows-amd64.exe  .
+      - name: Check the tag
+        run: |
+          got=$(dist/formatex-mcp-linux-amd64 --version)
+          want="formatex-mcp ${GITHUB_REF_NAME}"
+          if [ "$got" != "$want" ]; then
+            echo "The binary reports \"$got\" but the tag is ${GITHUB_REF_NAME}." >&2
+            echo "Set Version in internal/mcp/server.go and version in smithery.yaml, then tag again." >&2
+            exit 1
+          fi
 
-          ls -lh dist/
+      - name: Write checksums
+        working-directory: dist
+        run: |
+          sha256sum formatex-mcp-* > checksums.txt
+          cat checksums.txt
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
         with:
-          name: "formatex-mcp ${{ steps.version.outputs.VERSION }}"
+          name: formatex-mcp ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            dist/formatex-mcp-linux-amd64
+            dist/formatex-mcp-linux-arm64
+            dist/formatex-mcp-darwin-amd64
+            dist/formatex-mcp-darwin-arm64
+            dist/formatex-mcp-windows-amd64.exe
+            dist/checksums.txt
           body: |
-            ## Installation
+            ## Install
 
-            ### go install (requires Go)
-            ```bash
-            go install github.com/formatexio/mcp@${{ steps.version.outputs.VERSION }}
-            ```
-
-            ### Download binary
-            Pick the binary for your platform below. Make it executable and add it to your PATH.
+            ### Download a binary
 
             | Platform | File |
             |---|---|
@@ -59,7 +89,25 @@ jobs:
             | macOS Apple Silicon | `formatex-mcp-darwin-arm64` |
             | Windows x64 | `formatex-mcp-windows-amd64.exe` |
 
-            ### Quick setup (Claude Desktop)
+            Compare the SHA-256 of the file with the matching line of `checksums.txt`
+            (`sha256sum <file>` on Linux, `shasum -a 256 <file>` on macOS), then make
+            it executable and put it on your PATH, for example:
+
+            ```bash
+            chmod +x formatex-mcp-darwin-arm64
+            mv formatex-mcp-darwin-arm64 /usr/local/bin/formatex-mcp
+            ```
+
+            ### go install (requires Go)
+
+            ```bash
+            go install github.com/formatexio/mcp/cmd/formatex-mcp@${{ github.ref_name }}
+            ```
+
+            The binary lands in `$(go env GOPATH)/bin`.
+
+            ## Quick setup (Claude Desktop, local binary)
+
             ```json
             {
               "mcpServers": {
@@ -71,7 +119,7 @@ jobs:
             }
             ```
 
-            See [full setup docs](https://formatex.io/docs#mcp) for all clients.
-          files: dist/*
-          draft: false
-          prerelease: false
+            Get a key at https://formatex.io/dashboard/api-keys. Every other client,
+            and the hosted endpoint `https://mcp.formatex.io/mcp` that needs no
+            install, are covered in the [README](https://github.com/formatexio/mcp#readme)
+            and at https://formatex.io/mcp.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -28,6 +29,9 @@ func NewClient(baseURL, apiKey string) *Client {
 		},
 	}
 }
+
+// BaseURL returns the API base URL configured for this client.
+func (c *Client) BaseURL() string { return c.baseURL }
 
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("X-API-Key", c.apiKey)
@@ -65,12 +69,12 @@ type CompileAPIRequest struct {
 
 // SmartCompileAPIRequest is the request body for POST /compile/smart.
 type SmartCompileAPIRequest struct {
-	LaTeX   string `json:"latex"`
-	Engine  string `json:"engine,omitempty"`
-	Runs    int    `json:"runs,omitempty"`
-	Timeout int    `json:"timeout,omitempty"`
-	AutoFix  bool `json:"autoFix,omitempty"`
-	Fallback bool `json:"fallback,omitempty"`
+	LaTeX    string `json:"latex"`
+	Engine   string `json:"engine,omitempty"`
+	Runs     int    `json:"runs,omitempty"`
+	Timeout  int    `json:"timeout,omitempty"`
+	AutoFix  bool   `json:"autoFix,omitempty"`
+	Fallback bool   `json:"fallback,omitempty"`
 }
 
 // CompileResponse holds the raw PDF bytes and response headers.
@@ -80,6 +84,7 @@ type CompileResponse struct {
 	DurationMs     string
 	EngineUsed     string
 	AutoFixesCount string
+	SignedPDFURL   string // short-lived browser-clickable URL, set when server supports it
 }
 
 // SyntaxCheckResult is the response from POST /compile/check.
@@ -145,9 +150,10 @@ func (c *Client) Compile(ctx context.Context, req CompileAPIRequest) (*CompileRe
 	}
 
 	return &CompileResponse{
-		PDFData:    respBody,
-		JobID:      resp.Header.Get("X-Job-ID"),
-		DurationMs: resp.Header.Get("X-Compile-Duration-Ms"),
+		PDFData:      respBody,
+		JobID:        resp.Header.Get("X-Job-ID"),
+		DurationMs:   resp.Header.Get("X-Compile-Duration-Ms"),
+		SignedPDFURL: resp.Header.Get("X-Signed-PDF-URL"),
 	}, nil
 }
 
@@ -185,6 +191,7 @@ func (c *Client) SmartCompile(ctx context.Context, req SmartCompileAPIRequest) (
 		DurationMs:     resp.Header.Get("X-Compile-Duration-Ms"),
 		EngineUsed:     resp.Header.Get("X-Engine-Used"),
 		AutoFixesCount: resp.Header.Get("X-Auto-Fixes-Applied"),
+		SignedPDFURL:   resp.Header.Get("X-Signed-PDF-URL"),
 	}, nil
 }
 
@@ -266,7 +273,8 @@ type JobStatusResponse struct {
 		DurationMs int    `json:"durationMs"`
 		Engine     string `json:"engine"`
 	} `json:"result,omitempty"`
-	Error string `json:"error,omitempty"`
+	Error        string `json:"error,omitempty"`
+	SignedPDFURL string `json:"signed_pdf_url,omitempty"` // present when completed and server supports signed URLs
 }
 
 // TemplateVariable describes a single variable in a template schema.
@@ -279,13 +287,39 @@ type TemplateVariable struct {
 }
 
 // UserTemplate represents a single user template returned by GET /templates.
+// Source is only worth reading from the single-template endpoints; the list
+// endpoint returns it too, but list_templates does not print it.
 type UserTemplate struct {
 	ID          string             `json:"id"`
 	Name        string             `json:"name"`
 	Description string             `json:"description"`
 	Category    string             `json:"category"`
 	Engine      string             `json:"engine"`
+	Source      string             `json:"source"`
 	Schema      []TemplateVariable `json:"schema"`
+	UpdatedAt   string             `json:"updatedAt"`
+}
+
+// CreateTemplateAPIRequest is the request body for POST /templates.
+type CreateTemplateAPIRequest struct {
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Category    string             `json:"category,omitempty"`
+	Engine      string             `json:"engine,omitempty"`
+	Source      string             `json:"source"`
+	Schema      []TemplateVariable `json:"schema"`
+}
+
+// UpdateTemplateAPIRequest is the request body for PUT /templates/user/:id.
+// Every field is a pointer so that an omitted field is left alone by the API
+// while an empty one (an empty description, an empty schema) is applied.
+type UpdateTemplateAPIRequest struct {
+	Name        *string             `json:"name,omitempty"`
+	Description *string             `json:"description,omitempty"`
+	Category    *string             `json:"category,omitempty"`
+	Engine      *string             `json:"engine,omitempty"`
+	Source      *string             `json:"source,omitempty"`
+	Schema      *[]TemplateVariable `json:"schema,omitempty"`
 }
 
 // ListTemplatesResponse is the response from GET /templates.
@@ -444,6 +478,63 @@ func (c *Client) ListTemplates(ctx context.Context) (*ListTemplatesResponse, err
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	return &result, nil
+}
+
+// templateRequest sends one request to a single-template endpoint and decodes
+// the {"template": {...}} envelope those endpoints share. body may be nil.
+func (c *Client) templateRequest(ctx context.Context, method, path string, body any) (*UserTemplate, error) {
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal request: %w", err)
+		}
+		reader = bytes.NewReader(payload)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, readAPIError(respBody, resp.StatusCode)
+	}
+
+	var result struct {
+		Template UserTemplate `json:"template"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &result.Template, nil
+}
+
+// GetTemplate fetches one template, source included, via GET /templates/user/:id.
+func (c *Client) GetTemplate(ctx context.Context, templateID string) (*UserTemplate, error) {
+	return c.templateRequest(ctx, http.MethodGet, "/api/v1/templates/user/"+url.PathEscape(templateID), nil)
+}
+
+// CreateTemplate saves a new template via POST /templates.
+func (c *Client) CreateTemplate(ctx context.Context, req CreateTemplateAPIRequest) (*UserTemplate, error) {
+	return c.templateRequest(ctx, http.MethodPost, "/api/v1/templates", req)
+}
+
+// UpdateTemplate changes the given fields of a template via PUT /templates/user/:id.
+func (c *Client) UpdateTemplate(ctx context.Context, templateID string, req UpdateTemplateAPIRequest) (*UserTemplate, error) {
+	return c.templateRequest(ctx, http.MethodPut, "/api/v1/templates/user/"+url.PathEscape(templateID), req)
 }
 
 // CompileTemplate compiles a user template via POST /templates/user/:id/compile.
