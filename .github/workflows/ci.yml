@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    # A version tag is built and tested by the Release workflow.
+    tags-ignore:
+      - "v*"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt formatted:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -race -count=1
+
+      - name: Build cmd/formatex-mcp
+        run: go build -o /dev/null ./cmd/formatex-mcp
+
+      - name: Build the repository root
+        run: go build -o /dev/null .
