@@ -246,10 +246,13 @@ Every compile tool returns a download URL for the PDF.
 | `list_engines` | List the available engines and when to use each. | No |
 | `get_usage` | Show this month's usage and your plan limits. | No |
 | `get_job` | Poll an async job: PDF URL when done, error log when failed. | No |
-| `list_templates` | List your saved templates (Pro plan and higher). | No |
+| `list_templates` | List your saved templates and their variables (Pro plan and higher). | No |
+| `get_template` | Read one saved template with its full LaTeX source (Pro plan and higher). | No |
+| `create_template` | Save a new template with `<<variable>>` placeholders, up to your plan's template limit (Pro plan and higher). | No |
+| `update_template` | Change only the fields you pass on a saved template (Pro plan and higher). | No |
 | `fetch_pdf_bytes` | Fetch a finished job's PDF as base64 bytes. Only needed to save or inspect the file. | No |
 
-Each tool carries a title and annotations, so clients can auto-approve the read-only ones.
+Each tool carries a title and annotations, so clients can auto-approve the read-only ones. `update_template` replaces the saved version, so it is marked destructive and clients should ask before running it. The template tools save LaTeX source and variable definitions only; images and other assets are added in the dashboard.
 
 ### Resources
 

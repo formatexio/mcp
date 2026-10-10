@@ -24,16 +24,38 @@ var wantTools = map[string]bool{
 	"get_usage":        true,
 	"get_job":          true,
 	"list_templates":   true,
+	"get_template":     true,
+	"create_template":  false,
+	"update_template":  false,
 	"fetch_pdf_bytes":  true,
+}
+
+// wantWrites describes the annotations of the tools that change data. Compile
+// tools only add jobs and reach a remote compiler, so they are an open world;
+// template tools only touch the caller's own account, so theirs is closed.
+// update_template replaces content in place: idempotent, but destructive.
+var wantWrites = map[string]struct{ destructive, idempotent, openWorld bool }{
+	"compile_latex":    {false, false, true},
+	"compile_smart":    {false, false, true},
+	"compile_async":    {false, false, true},
+	"compile_template": {false, false, true},
+	"create_template":  {false, false, false},
+	"update_template":  {true, true, false},
 }
 
 // connect starts the server on an in-memory transport and returns a session.
 // The API client points at a closed port: listing tools never calls the API.
 func connect(t *testing.T) *sdk.ClientSession {
 	t.Helper()
+	return connectTo(t, "http://127.0.0.1:1/")
+}
+
+// connectTo is connect with the API client pointed at baseURL.
+func connectTo(t *testing.T, baseURL string) *sdk.ClientSession {
+	t.Helper()
 	ctx := context.Background()
 
-	server := NewMCPServer(NewClient("http://127.0.0.1:1/", "dummy"))
+	server := NewMCPServer(NewClient(baseURL, "dummy"))
 	serverTransport, clientTransport := sdk.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
@@ -102,15 +124,29 @@ func TestToolsHaveTitlesAndAnnotations(t *testing.T) {
 				t.Errorf("ReadOnlyHint = %v, want %v", a.ReadOnlyHint, wantTools[tool.Name])
 			}
 			if a.OpenWorldHint == nil {
-				t.Error("OpenWorldHint must be explicit, the protocol default is true")
+				t.Fatal("OpenWorldHint must be explicit, the protocol default is true")
 			}
-			if !a.ReadOnlyHint {
-				if a.DestructiveHint == nil || *a.DestructiveHint {
-					t.Error("a compile tool only adds jobs: DestructiveHint must be explicitly false")
+			if a.ReadOnlyHint {
+				if *a.OpenWorldHint {
+					t.Error("a read-only tool only reads the FormaTeX account: OpenWorldHint must be false")
 				}
-				if a.IdempotentHint {
-					t.Error("a compile tool creates a new job per call: IdempotentHint must be false")
-				}
+				return
+			}
+			want, ok := wantWrites[tool.Name]
+			if !ok {
+				t.Fatalf("%s writes data but has no entry in wantWrites", tool.Name)
+			}
+			if a.DestructiveHint == nil {
+				t.Fatal("DestructiveHint must be explicit, the protocol default is true")
+			}
+			if *a.DestructiveHint != want.destructive {
+				t.Errorf("DestructiveHint = %v, want %v", *a.DestructiveHint, want.destructive)
+			}
+			if a.IdempotentHint != want.idempotent {
+				t.Errorf("IdempotentHint = %v, want %v", a.IdempotentHint, want.idempotent)
+			}
+			if *a.OpenWorldHint != want.openWorld {
+				t.Errorf("OpenWorldHint = %v, want %v", *a.OpenWorldHint, want.openWorld)
 			}
 		})
 	}
@@ -124,6 +160,9 @@ var wantRequired = map[string][]string{
 	"compile_smart":    {"latex"},
 	"compile_async":    {"latex"},
 	"compile_template": {"templateId"},
+	"get_template":     {"templateId"},
+	"create_template":  {"name", "source"},
+	"update_template":  {"templateId"},
 	"check_syntax":     {"latex"},
 	"get_job":          {"jobId"},
 	"fetch_pdf_bytes":  {"jobId"},

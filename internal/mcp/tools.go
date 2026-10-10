@@ -151,7 +151,7 @@ func registerTools(server *sdk.Server, client *Client) {
 	sdk.AddTool(server, readOnlyTool(
 		"list_templates",
 		"List Templates",
-		"List your saved LaTeX templates. Returns template IDs, names, and descriptions. Templates are available on Pro plan and higher. Use the template ID with compile_template.",
+		"List your saved LaTeX templates. Returns template IDs, names, descriptions and variables. Templates are available on Pro plan and higher. Use the template ID with compile_template, get_template or update_template.",
 	), handleListTemplates(client))
 
 	sdk.AddTool(server, compileTool(
@@ -159,6 +159,8 @@ func registerTools(server *sdk.Server, client *Client) {
 		"Compile Template",
 		"Compile a saved LaTeX template by ID with optional variable substitutions. Returns a download URL for the PDF. Templates are available on Pro plan and higher.",
 	), handleCompileTemplate(client))
+
+	registerTemplateTools(server, client)
 
 	sdk.AddTool(server, readOnlyTool(
 		"fetch_pdf_bytes",
@@ -429,7 +431,7 @@ func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequ
 		if len(result.Templates) == 0 {
 			return &sdk.CallToolResult{
 				Content: []sdk.Content{
-					&sdk.TextContent{Text: "No templates found. Create templates at https://formatex.io/dashboard/templates"},
+					&sdk.TextContent{Text: "No templates found. Create one with create_template, or in the dashboard at https://formatex.io/dashboard/templates"},
 				},
 			}, struct{}{}, nil
 		}
@@ -437,32 +439,10 @@ func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequ
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("Found %d template(s):\n\n", len(result.Templates)))
 		for _, t := range result.Templates {
-			sb.WriteString(fmt.Sprintf("ID: %s\n  Name: %s\n  Category: %s\n  Engine: %s\n", t.ID, t.Name, t.Category, t.Engine))
-			if t.Description != "" {
-				sb.WriteString(fmt.Sprintf("  Description: %s\n", t.Description))
-			}
-			if len(t.Schema) > 0 {
-				sb.WriteString("  Variables:\n")
-				for _, v := range t.Schema {
-					req := "optional"
-					if v.Required {
-						req = "required"
-					}
-					line := fmt.Sprintf("    - %s (%s, %s)", v.Key, v.Type, req)
-					if v.Default != "" {
-						line += fmt.Sprintf(", default: %q", v.Default)
-					}
-					if v.Description != "" {
-						line += fmt.Sprintf(" — %s", v.Description)
-					}
-					sb.WriteString(line + "\n")
-				}
-			} else {
-				sb.WriteString("  Variables: none\n")
-			}
+			writeTemplate(&sb, t)
 			sb.WriteString("\n")
 		}
-		sb.WriteString("Use compile_template with a template ID to compile it.")
+		sb.WriteString("Use compile_template with a template ID to compile it, get_template to read one's source, or update_template to change it.")
 
 		return &sdk.CallToolResult{
 			Content: []sdk.Content{
