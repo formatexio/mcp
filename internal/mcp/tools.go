@@ -169,8 +169,8 @@ func registerTools(server *sdk.Server, client *Client) {
 	), handleFetchPDFBytes(client))
 }
 
-func handleCompileLatex(client *Client) func(context.Context, *sdk.CallToolRequest, CompileLatexInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileLatexInput) (*sdk.CallToolResult, struct{}, error) {
+func handleCompileLatex(client *Client) func(context.Context, *sdk.CallToolRequest, CompileLatexInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileLatexInput) (*sdk.CallToolResult, any, error) {
 		result, err := client.Compile(ctx, CompileAPIRequest{
 			LaTeX:   input.Latex,
 			Engine:  input.Engine,
@@ -183,7 +183,7 @@ func handleCompileLatex(client *Client) func(context.Context, *sdk.CallToolReque
 					&sdk.TextContent{Text: fmt.Sprintf("Compilation failed: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		engine := result.EngineUsed
@@ -205,12 +205,12 @@ func handleCompileLatex(client *Client) func(context.Context, *sdk.CallToolReque
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: meta},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleCompileSmart(client *Client) func(context.Context, *sdk.CallToolRequest, CompileSmartInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileSmartInput) (*sdk.CallToolResult, struct{}, error) {
+func handleCompileSmart(client *Client) func(context.Context, *sdk.CallToolRequest, CompileSmartInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileSmartInput) (*sdk.CallToolResult, any, error) {
 		result, err := client.SmartCompile(ctx, SmartCompileAPIRequest{
 			LaTeX:    input.Latex,
 			Runs:     input.Runs,
@@ -224,7 +224,7 @@ func handleCompileSmart(client *Client) func(context.Context, *sdk.CallToolReque
 					&sdk.TextContent{Text: fmt.Sprintf("Smart compilation failed: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		parts := []string{
@@ -246,12 +246,12 @@ func handleCompileSmart(client *Client) func(context.Context, *sdk.CallToolReque
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: strings.Join(parts, " | ")},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleCheckSyntax(client *Client) func(context.Context, *sdk.CallToolRequest, CheckSyntaxInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input CheckSyntaxInput) (*sdk.CallToolResult, struct{}, error) {
+func handleCheckSyntax(client *Client) func(context.Context, *sdk.CallToolRequest, CheckSyntaxInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input CheckSyntaxInput) (*sdk.CallToolResult, any, error) {
 		result, err := client.CheckSyntax(ctx, input.Latex)
 		if err != nil {
 			return &sdk.CallToolResult{
@@ -259,7 +259,7 @@ func handleCheckSyntax(client *Client) func(context.Context, *sdk.CallToolReques
 					&sdk.TextContent{Text: fmt.Sprintf("Syntax check failed: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		var sb strings.Builder
@@ -294,12 +294,12 @@ func handleCheckSyntax(client *Client) func(context.Context, *sdk.CallToolReques
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: sb.String()},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleListEngines(client *Client) func(context.Context, *sdk.CallToolRequest, ListEnginesInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input ListEnginesInput) (*sdk.CallToolResult, struct{}, error) {
+func handleListEngines(client *Client) func(context.Context, *sdk.CallToolRequest, ListEnginesInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input ListEnginesInput) (*sdk.CallToolResult, any, error) {
 		engines, err := client.ListEngines(ctx)
 		if err != nil {
 			return &sdk.CallToolResult{
@@ -307,7 +307,7 @@ func handleListEngines(client *Client) func(context.Context, *sdk.CallToolReques
 					&sdk.TextContent{Text: fmt.Sprintf("Failed to list engines: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		descriptions := map[string]string{
@@ -332,12 +332,12 @@ func handleListEngines(client *Client) func(context.Context, *sdk.CallToolReques
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: sb.String()},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleCompileAsync(client *Client) func(context.Context, *sdk.CallToolRequest, CompileAsyncInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileAsyncInput) (*sdk.CallToolResult, struct{}, error) {
+func handleCompileAsync(client *Client) func(context.Context, *sdk.CallToolRequest, CompileAsyncInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileAsyncInput) (*sdk.CallToolResult, any, error) {
 		result, err := client.CompileAsync(ctx, CompileAPIRequest{
 			LaTeX:   input.Latex,
 			Engine:  input.Engine,
@@ -350,19 +350,19 @@ func handleCompileAsync(client *Client) func(context.Context, *sdk.CallToolReque
 					&sdk.TextContent{Text: fmt.Sprintf("Async compilation failed: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		return &sdk.CallToolResult{
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: fmt.Sprintf("Job submitted. ID: %s, Status: %s\nCall get_job with this ID to poll for the result.", result.JobID, result.Status)},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleGetJob(client *Client) func(context.Context, *sdk.CallToolRequest, GetJobInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input GetJobInput) (*sdk.CallToolResult, struct{}, error) {
+func handleGetJob(client *Client) func(context.Context, *sdk.CallToolRequest, GetJobInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input GetJobInput) (*sdk.CallToolResult, any, error) {
 		job, err := client.GetJobStatus(ctx, input.JobID)
 		if err != nil {
 			return &sdk.CallToolResult{
@@ -370,7 +370,7 @@ func handleGetJob(client *Client) func(context.Context, *sdk.CallToolRequest, Ge
 					&sdk.TextContent{Text: fmt.Sprintf("Failed to get job status: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		switch job.Status {
@@ -384,7 +384,7 @@ func handleGetJob(client *Client) func(context.Context, *sdk.CallToolRequest, Ge
 				Content: []sdk.Content{
 					&sdk.TextContent{Text: meta},
 				},
-			}, struct{}{}, nil
+			}, nil, nil
 
 		case "failed":
 			log, err := client.GetJobLog(ctx, input.JobID)
@@ -396,20 +396,20 @@ func handleGetJob(client *Client) func(context.Context, *sdk.CallToolRequest, Ge
 					&sdk.TextContent{Text: fmt.Sprintf("Job %s failed.\n\nError log:\n%s", input.JobID, log)},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 
 		default:
 			return &sdk.CallToolResult{
 				Content: []sdk.Content{
 					&sdk.TextContent{Text: fmt.Sprintf("Job %s status: %s. Call get_job again to check for completion.", input.JobID, job.Status)},
 				},
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 	}
 }
 
-func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequest, ListTemplatesInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input ListTemplatesInput) (*sdk.CallToolResult, struct{}, error) {
+func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequest, ListTemplatesInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input ListTemplatesInput) (*sdk.CallToolResult, any, error) {
 		result, err := client.ListTemplates(ctx)
 		if err != nil {
 			return &sdk.CallToolResult{
@@ -417,7 +417,7 @@ func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequ
 					&sdk.TextContent{Text: fmt.Sprintf("Failed to list templates: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		if result.Message != "" && len(result.Templates) == 0 {
@@ -425,7 +425,7 @@ func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequ
 				Content: []sdk.Content{
 					&sdk.TextContent{Text: result.Message},
 				},
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		if len(result.Templates) == 0 {
@@ -433,7 +433,7 @@ func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequ
 				Content: []sdk.Content{
 					&sdk.TextContent{Text: "No templates found. Create one with create_template, or in the dashboard at https://formatex.io/dashboard/templates"},
 				},
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		var sb strings.Builder
@@ -448,12 +448,12 @@ func handleListTemplates(client *Client) func(context.Context, *sdk.CallToolRequ
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: sb.String()},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleCompileTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, CompileTemplateInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileTemplateInput) (*sdk.CallToolResult, struct{}, error) {
+func handleCompileTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, CompileTemplateInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input CompileTemplateInput) (*sdk.CallToolResult, any, error) {
 		if input.Variables == nil {
 			input.Variables = map[string]string{}
 		}
@@ -464,7 +464,7 @@ func handleCompileTemplate(client *Client) func(context.Context, *sdk.CallToolRe
 					&sdk.TextContent{Text: fmt.Sprintf("Template compilation failed: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		pdfURL := client.BaseURL() + "/api/v1/compilations/" + result.JobID + "/pdf"
@@ -475,12 +475,12 @@ func handleCompileTemplate(client *Client) func(context.Context, *sdk.CallToolRe
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: meta},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleFetchPDFBytes(client *Client) func(context.Context, *sdk.CallToolRequest, FetchPDFBytesInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input FetchPDFBytesInput) (*sdk.CallToolResult, struct{}, error) {
+func handleFetchPDFBytes(client *Client) func(context.Context, *sdk.CallToolRequest, FetchPDFBytesInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input FetchPDFBytesInput) (*sdk.CallToolResult, any, error) {
 		pdfBytes, err := client.GetJobPDF(ctx, input.JobID)
 		if err != nil {
 			return &sdk.CallToolResult{
@@ -488,7 +488,7 @@ func handleFetchPDFBytes(client *Client) func(context.Context, *sdk.CallToolRequ
 					&sdk.TextContent{Text: fmt.Sprintf("Failed to fetch PDF: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		pdfB64 := base64.StdEncoding.EncodeToString(pdfBytes)
@@ -497,12 +497,12 @@ func handleFetchPDFBytes(client *Client) func(context.Context, *sdk.CallToolRequ
 				&sdk.TextContent{Text: fmt.Sprintf("PDF fetched. Size: %d bytes. Job ID: %s", len(pdfBytes), input.JobID)},
 				&sdk.TextContent{Text: "PDF_BASE64:" + pdfB64},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleGetUsage(client *Client) func(context.Context, *sdk.CallToolRequest, GetUsageInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input GetUsageInput) (*sdk.CallToolResult, struct{}, error) {
+func handleGetUsage(client *Client) func(context.Context, *sdk.CallToolRequest, GetUsageInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input GetUsageInput) (*sdk.CallToolResult, any, error) {
 		usage, err := client.GetUsage(ctx)
 		if err != nil {
 			return &sdk.CallToolResult{
@@ -510,7 +510,7 @@ func handleGetUsage(client *Client) func(context.Context, *sdk.CallToolRequest, 
 					&sdk.TextContent{Text: fmt.Sprintf("Failed to get usage: %s", err.Error())},
 				},
 				IsError: true,
-			}, struct{}{}, nil
+			}, nil, nil
 		}
 
 		remaining := usage.Compilations.Limit - usage.Compilations.Used
@@ -550,6 +550,6 @@ func handleGetUsage(client *Client) func(context.Context, *sdk.CallToolRequest, 
 			Content: []sdk.Content{
 				&sdk.TextContent{Text: sb.String()},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }

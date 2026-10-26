@@ -6,7 +6,7 @@ import (
 
 // Version is the FormaTeX MCP server version. It is reported to clients in the
 // initialize handshake, by the HTTP /health endpoint and by the --version flag.
-const Version = "1.1.0"
+const Version = "1.1.1"
 
 // NewMCPServer creates and configures the FormaTeX MCP server.
 // It registers all tools, resources, and prompts backed by the FormaTeX REST API.
