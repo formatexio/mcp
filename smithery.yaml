@@ -1,7 +1,7 @@
 name: formatex-mcp
 description: Compile LaTeX documents to PDF using the FormaTeX API. Enables AI agents to generate and compile LaTeX without any local TeX Live installation.
 homepage: https://formatex.io
-version: "1.1.0"
+version: "1.1.1"
 
 startCommand:
   type: stdio

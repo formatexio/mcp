@@ -73,8 +73,8 @@ func connectTo(t *testing.T, baseURL string) *sdk.ClientSession {
 }
 
 func TestServerVersion(t *testing.T) {
-	if Version != "1.1.0" {
-		t.Errorf("Version = %q, want 1.1.0", Version)
+	if Version != "1.1.1" {
+		t.Errorf("Version = %q, want 1.1.1", Version)
 	}
 	info := connect(t).InitializeResult().ServerInfo
 	if info == nil || info.Version != Version || info.Name != "formatex-mcp" {

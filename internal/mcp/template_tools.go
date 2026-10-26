@@ -334,15 +334,15 @@ func templateSaved(verb string, t *UserTemplate) *sdk.CallToolResult {
 	return templateText(sb.String(), false)
 }
 
-func handleGetTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, GetTemplateInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input GetTemplateInput) (*sdk.CallToolResult, struct{}, error) {
+func handleGetTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, GetTemplateInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input GetTemplateInput) (*sdk.CallToolResult, any, error) {
 		if strings.TrimSpace(input.TemplateID) == "" {
-			return templateText("templateId must not be empty. Call list_templates to see your template IDs.", true), struct{}{}, nil
+			return templateText("templateId must not be empty. Call list_templates to see your template IDs.", true), nil, nil
 		}
 
 		t, err := client.GetTemplate(ctx, input.TemplateID)
 		if err != nil {
-			return templateFailure("Failed to get template", err), struct{}{}, nil
+			return templateFailure("Failed to get template", err), nil, nil
 		}
 
 		var sb strings.Builder
@@ -360,18 +360,18 @@ func handleGetTemplate(client *Client) func(context.Context, *sdk.CallToolReques
 				&sdk.TextContent{Text: sb.String()},
 				&sdk.TextContent{Text: t.Source},
 			},
-		}, struct{}{}, nil
+		}, nil, nil
 	}
 }
 
-func handleCreateTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, CreateTemplateInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input CreateTemplateInput) (*sdk.CallToolResult, struct{}, error) {
+func handleCreateTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, CreateTemplateInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input CreateTemplateInput) (*sdk.CallToolResult, any, error) {
 		name, err := validateTemplateName(input.Name)
 		if err != nil {
-			return templateInvalid(err), struct{}{}, nil
+			return templateInvalid(err), nil, nil
 		}
 		if err := validateTemplateSource(input.Source); err != nil {
-			return templateInvalid(err), struct{}{}, nil
+			return templateInvalid(err), nil, nil
 		}
 
 		body := CreateTemplateAPIRequest{
@@ -381,30 +381,30 @@ func handleCreateTemplate(client *Client) func(context.Context, *sdk.CallToolReq
 		}
 		if input.Category != "" {
 			if body.Category, err = normalizeChoice("category", input.Category, templateCategories); err != nil {
-				return templateInvalid(err), struct{}{}, nil
+				return templateInvalid(err), nil, nil
 			}
 		}
 		if input.Engine != "" {
 			if body.Engine, err = normalizeChoice("engine", input.Engine, templateEngines); err != nil {
-				return templateInvalid(err), struct{}{}, nil
+				return templateInvalid(err), nil, nil
 			}
 		}
 		if body.Schema, err = buildSchema(input.Schema); err != nil {
-			return templateInvalid(err), struct{}{}, nil
+			return templateInvalid(err), nil, nil
 		}
 
 		t, err := client.CreateTemplate(ctx, body)
 		if err != nil {
-			return templateFailure("Failed to create template", err), struct{}{}, nil
+			return templateFailure("Failed to create template", err), nil, nil
 		}
-		return templateSaved("created", t), struct{}{}, nil
+		return templateSaved("created", t), nil, nil
 	}
 }
 
-func handleUpdateTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, UpdateTemplateInput) (*sdk.CallToolResult, struct{}, error) {
-	return func(ctx context.Context, req *sdk.CallToolRequest, input UpdateTemplateInput) (*sdk.CallToolResult, struct{}, error) {
+func handleUpdateTemplate(client *Client) func(context.Context, *sdk.CallToolRequest, UpdateTemplateInput) (*sdk.CallToolResult, any, error) {
+	return func(ctx context.Context, req *sdk.CallToolRequest, input UpdateTemplateInput) (*sdk.CallToolResult, any, error) {
 		if strings.TrimSpace(input.TemplateID) == "" {
-			return templateText("templateId must not be empty. Call list_templates to see your template IDs.", true), struct{}{}, nil
+			return templateText("templateId must not be empty. Call list_templates to see your template IDs.", true), nil, nil
 		}
 
 		var body UpdateTemplateAPIRequest
@@ -412,13 +412,13 @@ func handleUpdateTemplate(client *Client) func(context.Context, *sdk.CallToolReq
 		if input.Name != nil {
 			name, err := validateTemplateName(*input.Name)
 			if err != nil {
-				return templateInvalid(err), struct{}{}, nil
+				return templateInvalid(err), nil, nil
 			}
 			body.Name = &name
 		}
 		if input.Source != nil {
 			if err := validateTemplateSource(*input.Source); err != nil {
-				return templateInvalid(err), struct{}{}, nil
+				return templateInvalid(err), nil, nil
 			}
 			body.Source = input.Source
 		}
@@ -426,33 +426,33 @@ func handleUpdateTemplate(client *Client) func(context.Context, *sdk.CallToolReq
 		if input.Category != nil {
 			category, err := normalizeChoice("category", *input.Category, templateCategories)
 			if err != nil {
-				return templateInvalid(err), struct{}{}, nil
+				return templateInvalid(err), nil, nil
 			}
 			body.Category = &category
 		}
 		if input.Engine != nil {
 			engine, err := normalizeChoice("engine", *input.Engine, templateEngines)
 			if err != nil {
-				return templateInvalid(err), struct{}{}, nil
+				return templateInvalid(err), nil, nil
 			}
 			body.Engine = &engine
 		}
 		if input.Schema != nil {
 			schema, err := buildSchema(input.Schema)
 			if err != nil {
-				return templateInvalid(err), struct{}{}, nil
+				return templateInvalid(err), nil, nil
 			}
 			body.Schema = &schema
 		}
 
 		if body == (UpdateTemplateAPIRequest{}) {
-			return templateText("Nothing to update: pass at least one of name, source, description, category, engine or schema.", true), struct{}{}, nil
+			return templateText("Nothing to update: pass at least one of name, source, description, category, engine or schema.", true), nil, nil
 		}
 
 		t, err := client.UpdateTemplate(ctx, input.TemplateID, body)
 		if err != nil {
-			return templateFailure("Failed to update template", err), struct{}{}, nil
+			return templateFailure("Failed to update template", err), nil, nil
 		}
-		return templateSaved("updated", t), struct{}{}, nil
+		return templateSaved("updated", t), nil, nil
 	}
 }
